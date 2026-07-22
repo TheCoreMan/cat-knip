@@ -55,5 +55,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install NestJS ${{ matrix.nest }}
-        run: pnpm add --save-dev --lockfile=false "@nestjs/common@^${{ matrix.nest }}" "@nestjs/core@^${{ matrix.nest }}" "@nestjs/testing@^${{ matrix.nest }}"
+        run: pnpm add --save-dev --lockfile=false --allow-build=@nestjs/core "@nestjs/common@^${{ matrix.nest }}" "@nestjs/core@^${{ matrix.nest }}" "@nestjs/testing@^${{ matrix.nest }}"
       - run: pnpm test --runInBand
