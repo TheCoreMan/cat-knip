@@ -15,30 +15,63 @@ pnpm add -D cat-knip
 ## Use
 
 ```ts
-import { Test } from '@nestjs/testing';
-import { getUnusedExports } from 'cat-knip/testing';
+import {
+  expectNoUnusedExports,
+  getModuleRefWithSnapshot,
+} from 'cat-knip/testing';
 import { AppModule } from '../src/app.module';
 
 it('has no unused module exports', async () => {
-  const moduleRef = await Test.createTestingModule({
+  await using moduleRef = await getModuleRefWithSnapshot({
     imports: [AppModule],
-  }).compile({ snapshot: true });
+  });
 
-  const findings = getUnusedExports(moduleRef);
-  await moduleRef.close();
-
-  expect(findings).toEqual([]);
+  expectNoUnusedExports(moduleRef);
 });
 ```
 
-`snapshot: true` must be passed to `compile()`. To keep intentional exports:
+`getModuleRefWithSnapshot` compiles with `snapshot: true` and closes the module when the `await using` scope exits. `await using` requires TypeScript 5.2 or newer.
+
+When the assertion fails, it prints one unused export per line without internal graph node IDs:
+
+```text
+cat-knip found 2 unused module exports:
+
+- AuthModule: AUTH_CLIENT
+- SharedModule: SharedService
+```
+
+When creating a testing module directly, `snapshot: true` must be passed to `compile()`.
+
+## Ignoring exports
+
+Use the `ignore` option with `getUnusedExports`, `expectNoUnusedExports`, or `analyzeModule` to exclude exports that cat-knip should not report:
 
 ```ts
 getUnusedExports(moduleRef, {
-  ignore: ['SharedService', { module: 'AuthModule', token: 'AUTH_CLIENT' }],
+  ignore: {
+    modules: ['ThirdPartyModule'],
+    tokens: ['SharedService'],
+    exactMatches: ['AuthModule:AUTH_CLIENT'],
+  },
 });
 ```
 
-Requires NestJS 10 or 11. cat-knip analyzes the runtime DI graph; it has no CLI and does not parse source files.
+- `modules` ignores every export owned by a named module. Use it when an entire dependency module is outside your control.
+- `tokens` ignores a token regardless of which module owns it. Use it for an intentional public token that may be exported by multiple modules.
+- `exactMatches` ignores only a specific `ModuleName:token` pair. Use it when a dependency module has particular exports you do not own, without suppressing its other findings.
+
+For example, Nest dependencies can add exported providers to the runtime graph. Ignore those dependency-owned exports while continuing to check first-party exports:
+
+```ts
+expectNoUnusedExports(moduleRef, {
+  ignore: {
+    modules: ['ClsCommonModule', 'ClsRootModule', 'WinstonModule'],
+    exactMatches: ['ConfigModule:CONFIGURATION(app)'],
+  },
+});
+```
+
+Requires Node.js 20.5 or newer and NestJS 10 or 11. cat-knip analyzes the runtime DI graph; it has no CLI and does not parse source files.
 
 Contributions are welcome; see [CONTRIBUTING.md](./CONTRIBUTING.md).

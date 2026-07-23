@@ -1,11 +1,21 @@
 import { Test } from '@nestjs/testing';
 
-import { analyzeModule, getUnusedExports } from '../src/testing';
+import {
+  analyzeModule,
+  expectNoUnusedExports,
+  getModuleRefWithSnapshot,
+  getUnusedExports,
+} from '../src/testing';
 import type { SerializedGraphJson } from '../src/types';
-import { OrphanExportModule, RedundantExportModule } from './fixtures';
+import {
+  ConsumedExportModule,
+  OrphanExportModule,
+  RedundantExportModule,
+  RedundantTokenModule,
+} from './fixtures';
 
 describe('getUnusedExports', () => {
-  it('reads a compiled testing module and applies a scoped ignore', async () => {
+  it('reads a compiled testing module and applies an exact match', async () => {
     const moduleReference = await Test.createTestingModule({
       imports: [RedundantExportModule],
     }).compile({ snapshot: true });
@@ -13,7 +23,9 @@ describe('getUnusedExports', () => {
     try {
       expect(
         getUnusedExports(moduleReference, {
-          ignore: [{ module: 'GroomingModule', token: 'WhiskerService' }],
+          ignore: {
+            exactMatches: ['GroomingModule:WhiskerService'],
+          },
         }).map(({ token }) => token),
       ).not.toContain('WhiskerService');
     } finally {
@@ -41,7 +53,7 @@ describe('getUnusedExports', () => {
     ]);
   });
 
-  it('applies global and scoped ignores independently', () => {
+  it('applies module, token, and exact-match ignores independently', () => {
     const graph: SerializedGraphJson = {
       edges: {},
       nodes: {
@@ -61,15 +73,53 @@ describe('getUnusedExports', () => {
             type: 'provider',
           },
         },
+        third: {
+          label: 'OtherService',
+          metadata: {
+            exported: true,
+            sourceModuleName: 'SecondModule',
+            type: 'provider',
+          },
+        },
       },
     };
 
     expect(
       getUnusedExports(graph, {
-        ignore: [{ module: 'FirstModule', token: 'SharedService' }],
+        ignore: { modules: ['FirstModule'] },
       }),
-    ).toEqual([expect.objectContaining({ module: 'SecondModule' })]);
-    expect(getUnusedExports(graph, { ignore: ['SharedService'] })).toEqual([]);
+    ).toEqual([
+      expect.objectContaining({
+        module: 'SecondModule',
+        token: 'SharedService',
+      }),
+      expect.objectContaining({
+        module: 'SecondModule',
+        token: 'OtherService',
+      }),
+    ]);
+    expect(
+      getUnusedExports(graph, { ignore: { tokens: ['SharedService'] } }),
+    ).toEqual([
+      expect.objectContaining({
+        module: 'SecondModule',
+        token: 'OtherService',
+      }),
+    ]);
+    expect(
+      getUnusedExports(graph, {
+        ignore: { exactMatches: ['FirstModule:SharedService'] },
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        module: 'SecondModule',
+        token: 'SharedService',
+      }),
+      expect.objectContaining({
+        module: 'SecondModule',
+        token: 'OtherService',
+      }),
+    ]);
   });
 
   it('rejects a real testing module compiled without snapshots', async () => {
@@ -103,7 +153,7 @@ describe('getUnusedExports', () => {
   it('accepts module metadata and ignore rules', async () => {
     const findings = await analyzeModule(
       { imports: [RedundantExportModule] },
-      { ignore: ['WhiskerService'] },
+      { ignore: { tokens: ['WhiskerService'] } },
     );
 
     expect(findings.map(({ token }) => token)).not.toContain('WhiskerService');
@@ -113,5 +163,85 @@ describe('getUnusedExports', () => {
     await expect(analyzeModule(OrphanExportModule)).resolves.toEqual([
       expect.objectContaining({ token: 'StrayCatService' }),
     ]);
+  });
+});
+
+describe('expectNoUnusedExports', () => {
+  it('does not throw when every export is consumed', async () => {
+    const moduleReference = await Test.createTestingModule({
+      imports: [ConsumedExportModule],
+    }).compile({ snapshot: true });
+
+    try {
+      expect(() => expectNoUnusedExports(moduleReference)).not.toThrow();
+    } finally {
+      await moduleReference.close();
+    }
+  });
+
+  it('applies ignore options before asserting', async () => {
+    const moduleReference = await Test.createTestingModule({
+      imports: [OrphanExportModule],
+    }).compile({ snapshot: true });
+
+    try {
+      expect(() =>
+        expectNoUnusedExports(moduleReference, {
+          ignore: { modules: ['OrphanExportModule'] },
+        }),
+      ).not.toThrow();
+    } finally {
+      await moduleReference.close();
+    }
+  });
+
+  it('prints sorted findings without node IDs', async () => {
+    const moduleReference = await Test.createTestingModule({
+      imports: [RedundantTokenModule, OrphanExportModule],
+    }).compile({ snapshot: true });
+    const findings = getUnusedExports(moduleReference);
+
+    try {
+      let error: Error | undefined;
+      try {
+        expectNoUnusedExports(moduleReference);
+      } catch (cause) {
+        if (!(cause instanceof Error)) throw cause;
+        error = cause;
+      }
+
+      expect(error?.message).toBe(
+        'cat-knip found 2 unused module exports:\n\n' +
+          '- OrphanExportModule: StrayCatService\n' +
+          '- RedundantTokenModule: PURR_CLIENT',
+      );
+
+      for (const { nodeId } of findings) {
+        expect(error?.message).not.toContain(nodeId);
+      }
+    } finally {
+      await moduleReference.close();
+    }
+  });
+});
+
+describe('getModuleRefWithSnapshot', () => {
+  it('enables snapshots and closes the module on async disposal', async () => {
+    let wasClosed = false;
+
+    {
+      await using moduleReference = await getModuleRefWithSnapshot({
+        imports: [ConsumedExportModule],
+      });
+      const close = moduleReference.close.bind(moduleReference);
+      moduleReference.close = async () => {
+        wasClosed = true;
+        await close();
+      };
+
+      expect(() => expectNoUnusedExports(moduleReference)).not.toThrow();
+    }
+
+    expect(wasClosed).toBe(true);
   });
 });

@@ -8,8 +8,40 @@ import type { SerializedGraphJson, UnusedExportFinding } from './types';
 export type GraphSource =
   SerializedGraphJson | TestingModule | INestApplication;
 
+export interface CatKnipIgnoreOptions {
+  /** Ignore every export owned by any of these modules. */
+  modules?: ReadonlyArray<string>;
+  /** Ignore these provider tokens regardless of their owning module. */
+  tokens?: ReadonlyArray<string>;
+  /** Ignore exact `ModuleName:token` pairs. */
+  exactMatches?: ReadonlyArray<string>;
+}
+
 export interface CatKnipOptions {
-  ignore?: ReadonlyArray<string | Readonly<{ module: string; token: string }>>;
+  /**
+   * Exclude intentional or dependency-owned exports from findings.
+   * @example Ignore specific exports owned by third-party dependencies.
+   * ```ts
+   * const dependencyOwnedExports = [
+   *   'ClsCommonModule:Symbol(CLS_CTX)',
+   *   'ClsCommonModule:Symbol(CLS_REQ)',
+   *   'ClsCommonModule:Symbol(CLS_RES)',
+   *   'ClsRootModule:ClsGuardOptions',
+   *   'ClsRootModule:ClsInterceptorOptions',
+   *   'ClsRootModule:ClsMiddlewareOptions',
+   *   'ConfigModule:CONFIGURATION(app)',
+   *   'PrometheusModule:Symbol(PROMETHEUS_OPTIONS)',
+   *   'ScheduleModule:SchedulerRegistry',
+   *   'WinstonModule:NestWinston',
+   *   'WinstonModule:winston',
+   * ];
+   *
+   * getUnusedExports(moduleRef, {
+   *   ignore: { exactMatches: dependencyOwnedExports },
+   * });
+   * ```
+   */
+  ignore?: Readonly<CatKnipIgnoreOptions>;
 }
 
 function isSerializedGraph(source: GraphSource): source is SerializedGraphJson {
@@ -36,12 +68,12 @@ function toGraph(source: GraphSource): SerializedGraphJson {
 
 function isIgnored(
   finding: UnusedExportFinding,
-  rules: CatKnipOptions['ignore'],
+  rules: CatKnipIgnoreOptions | undefined,
 ): boolean {
-  return (rules ?? []).some((rule) =>
-    typeof rule === 'string'
-      ? rule === finding.token
-      : rule.module === finding.module && rule.token === finding.token,
+  return Boolean(
+    rules?.modules?.includes(finding.module) ||
+    rules?.tokens?.includes(finding.token) ||
+    rules?.exactMatches?.includes(`${finding.module}:${finding.token}`),
   );
 }
 
@@ -56,6 +88,45 @@ export function getUnusedExports(
 ): UnusedExportFinding[] {
   return detectUnusedExports(toGraph(source)).filter(
     (finding) => !isIgnored(finding, options.ignore),
+  );
+}
+
+/**
+ * Compile a Nest testing module with snapshots and close it on async disposal.
+ * @param metadata - Testing module metadata.
+ */
+export async function getModuleRefWithSnapshot(
+  metadata: ModuleMetadata,
+): Promise<TestingModule & AsyncDisposable> {
+  const moduleReference = await Test.createTestingModule(metadata).compile({
+    snapshot: true,
+  });
+
+  return Object.defineProperty(moduleReference, Symbol.asyncDispose, {
+    value: () => moduleReference.close(),
+  }) as TestingModule & AsyncDisposable;
+}
+
+/**
+ * Assert that a compiled Nest testing module has no unused exports.
+ * @param moduleRef - A testing module compiled with snapshots enabled.
+ * @param options - Optional rules for intentional or dependency-owned exports.
+ */
+export function expectNoUnusedExports(
+  moduleRef: TestingModule,
+  options: CatKnipOptions = {},
+): void {
+  const findings = getUnusedExports(moduleRef, options);
+
+  if (findings.length === 0) return;
+
+  const details = findings
+    .map(({ module, token }) => `- ${module}: ${String(token)}`)
+    .sort()
+    .join('\n');
+
+  throw new Error(
+    `cat-knip found ${findings.length} unused module exports:\n\n${details}`,
   );
 }
 
