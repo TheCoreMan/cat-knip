@@ -212,8 +212,8 @@ describe('expectNoUnusedExports', () => {
 
       expect(error?.message).toBe(
         'cat-knip found 2 unused module exports:\n\n' +
-          '- OrphanExportModule: StrayCatService\n' +
-          '- RedundantTokenModule: PURR_CLIENT',
+          '- OrphanExportModule => StrayCatService\n' +
+          '- RedundantTokenModule => PURR_CLIENT',
       );
 
       for (const { nodeId } of findings) {

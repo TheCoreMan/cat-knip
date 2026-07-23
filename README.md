@@ -6,6 +6,8 @@
 
 Find NestJS providers exported by a module but never injected by another module.
 
+![cat-knip logo](/docs/cat-knip-logo.png 'cat-knip logo')
+
 ## Install
 
 ```sh
@@ -37,8 +39,8 @@ When the assertion fails, it prints one unused export per line without internal 
 ```text
 cat-knip found 2 unused module exports:
 
-- AuthModule: AUTH_CLIENT
-- SharedModule: SharedService
+- AuthModule => AUTH_CLIENT
+- SharedModule => SharedService
 ```
 
 When creating a testing module directly, `snapshot: true` must be passed to `compile()`.
@@ -75,3 +77,7 @@ expectNoUnusedExports(moduleRef, {
 Requires Node.js 20.5 or newer and NestJS 10 or 11. cat-knip analyzes the runtime DI graph; it has no CLI and does not parse source files.
 
 Contributions are welcome; see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Why "cat-knip"?
+
+NestJS's logo is a cat, and there's a unused code detection tool called ["knip"](https://knip.dev/). The #dad-joke was right there, I couldn't help myself.
