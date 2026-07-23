@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "project": ["src/**/*.ts", "test/**/*.ts"],
+  "ignoreDependencies": [
+    "eslint-config-prettier",
+    "eslint-plugin-prettier",
+    "lint-staged"
+  ]
+}

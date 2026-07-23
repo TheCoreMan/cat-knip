@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11.8.0
+
+      - name: Setup Node.js from .nvmrc
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify toolchain
+        run: |
+          test "$(node --version)" = "v24.10.0"
+          test "$(pnpm --version)" = "11.8.0"
+          test "$(pnpm exec tsc --version)" = "Version 7.0.2"
+
+      - name: Check, test, and package
+        run: pnpm run ci
+
+  nest-compatibility:
+    name: NestJS ${{ matrix.nest }}
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        nest: [10, 11]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install NestJS ${{ matrix.nest }}
+        run: pnpm add --save-dev --lockfile=false --allow-build=@nestjs/core "@nestjs/common@^${{ matrix.nest }}" "@nestjs/core@^${{ matrix.nest }}" "@nestjs/testing@^${{ matrix.nest }}"
+      - run: ./node_modules/.bin/jest --runInBand
