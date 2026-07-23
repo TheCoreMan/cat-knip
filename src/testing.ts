@@ -9,7 +9,10 @@ export type GraphSource =
   SerializedGraphJson | TestingModule | INestApplication;
 
 export interface CatKnipIgnoreOptions {
-  /** Ignore every export owned by any of these modules. */
+  /**
+   * Ignore every export owned by any of these modules.
+   * @example ['ClsCommonModule', 'WinstonModule']
+   */
   modules?: ReadonlyArray<string>;
   /** Ignore these provider tokens regardless of their owning module. */
   tokens?: ReadonlyArray<string>;
@@ -19,27 +22,8 @@ export interface CatKnipIgnoreOptions {
 
 export interface CatKnipOptions {
   /**
-   * Exclude intentional or dependency-owned exports from findings.
-   * @example Ignore specific exports owned by third-party dependencies.
-   * ```ts
-   * const dependencyOwnedExports = [
-   *   'ClsCommonModule:Symbol(CLS_CTX)',
-   *   'ClsCommonModule:Symbol(CLS_REQ)',
-   *   'ClsCommonModule:Symbol(CLS_RES)',
-   *   'ClsRootModule:ClsGuardOptions',
-   *   'ClsRootModule:ClsInterceptorOptions',
-   *   'ClsRootModule:ClsMiddlewareOptions',
-   *   'ConfigModule:CONFIGURATION(app)',
-   *   'PrometheusModule:Symbol(PROMETHEUS_OPTIONS)',
-   *   'ScheduleModule:SchedulerRegistry',
-   *   'WinstonModule:NestWinston',
-   *   'WinstonModule:winston',
-   * ];
-   *
-   * getUnusedExports(moduleRef, {
-   *   ignore: { exactMatches: dependencyOwnedExports },
-   * });
-   * ```
+   * Exclude intentional, dependency-owned, or false-positive exports from findings.
+   * @todo if you find a false positive, please report an issue to GitHub!
    */
   ignore?: Readonly<CatKnipIgnoreOptions>;
 }
@@ -94,6 +78,13 @@ export function getUnusedExports(
 /**
  * Compile a Nest testing module with snapshots and close it on async disposal.
  * @param metadata - Testing module metadata.
+ * @tutorial Use like so:
+ * ```ts
+ * const moduleRef = await using getModuleRefWithSnapshot({
+ *   imports: [AppModule],
+ * });
+ * // When leaving this scope, the module will be closed automatically.
+ * ```
  */
 export async function getModuleRefWithSnapshot(
   metadata: ModuleMetadata,
@@ -111,6 +102,7 @@ export async function getModuleRefWithSnapshot(
  * Assert that a compiled Nest testing module has no unused exports.
  * @param moduleRef - A testing module compiled with snapshots enabled.
  * @param options - Optional rules for intentional or dependency-owned exports.
+ * @throws {Error} If any unused exports are found, with details in the error message.
  */
 export function expectNoUnusedExports(
   moduleRef: TestingModule,
@@ -121,7 +113,7 @@ export function expectNoUnusedExports(
   if (findings.length === 0) return;
 
   const details = findings
-    .map(({ module, token }) => `- ${module}: ${String(token)}`)
+    .map(({ module, token }) => `- ${module} => ${String(token)}`)
     .sort()
     .join('\n');
 
